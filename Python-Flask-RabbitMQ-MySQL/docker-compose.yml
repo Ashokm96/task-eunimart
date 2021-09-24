@@ -1,0 +1,35 @@
+version: '3.0'
+services:
+  backend:
+    build:
+      comtext:
+        dockerfile: Dockerfile
+    ports:
+      - 8000:8000
+    volumes:
+      - .:/app
+    depends_on:
+      -mysql
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:latest
+    environment:
+        - RABBITMQ_DEFAULT_USER=guest
+        - RABBITMQ_DEFAULT_PASS=guest
+    ports:
+        - "5672:5672"
+        - "15672:15672"
+
+  mysql:
+    container_name: mysql_container
+    image: mysql:latest
+    restart: always
+    environment:
+      MYSQL_DATABASE: 'demo'
+      MYSQL_ROOT_PASSWORD: 'admin'
+      MYSQL_DEFAULT_PASS: 'admin'
+      MYSQL_DEFAULT_USER: 'root'
+    voulmes:
+      - .dbdata:/var/lib/mysql
+    ports:
+      - '3306:3306'
