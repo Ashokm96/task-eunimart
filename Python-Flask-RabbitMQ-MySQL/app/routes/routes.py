@@ -1,15 +1,25 @@
-from app import app
+from flask import Blueprint
+
 from ..controllers import main, rabbit_mq
 
+api = Blueprint("api", __name__)
 
-@app.route('/', methods=['GET'])
+
+@api.get("/")
 def home():
     return main.home()
 
-@app.route('/publish', methods=['POST'])
+
+@api.get("/health")
+def health():
+    return {"status": "healthy"}, 200
+
+
+@api.post("/publish")
 def publish():
     return rabbit_mq.send()
 
-@app.route('/consume', methods=['GET'])
-def receive():
+
+@api.get("/consume")
+def consume():
     return rabbit_mq.receive()

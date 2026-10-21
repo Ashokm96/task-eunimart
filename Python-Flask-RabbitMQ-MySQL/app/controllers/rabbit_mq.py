@@ -1,41 +1,58 @@
-import pika, json
-from flask import request, jsonify, current_app
+import json
+
+import pika
+from flask import current_app, jsonify, request
+
 from .operations import Operations
 
 
+def _connection():
+    credentials = pika.PlainCredentials(
+        current_app.config["RABBIT_MQ_USER"], current_app.config["RABBIT_MQ_PASSWORD"]
+    )
+    parameters = pika.ConnectionParameters(
+        host=current_app.config["RABBIT_MQ_HOST"],
+        port=current_app.config["RABBIT_MQ_PORT"],
+        credentials=credentials,
+    )
+    return pika.BlockingConnection(parameters)
+
+
 def send():
-    url = current_app.config['RABBIT_MQ_URI']
-    connection = pika.BlockingConnection(pika.ConnectionParameters(url))
-    channel = connection.channel()
-    channel.queue_declare(queue='operations', durable=True)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or "method" not in payload or "list" not in payload:
+        return jsonify({"message": "JSON body must include method and list"}), 400
 
+    connection = _connection()
     try:
-        channel.basic_publish(exchange='',
-                              routing_key='operations',
-                              body=json.dumps(request.json),
-                              properties=pika.BasicProperties(
-                              delivery_mode=2,
-                              ))
+        channel = connection.channel()
+        queue = current_app.config["RABBIT_MQ_QUEUE"]
+        channel.queue_declare(queue=queue, durable=True)
+        channel.basic_publish(
+            exchange="",
+            routing_key=queue,
+            body=json.dumps(payload),
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
+        return jsonify({"message": "Data sent to consumer"}), 200
+    finally:
         connection.close()
-
-        return jsonify({'Message': 'Data sent to consumer'}), 200
-    except:
-        return jsonify({'Message': 'Error sending data to consumer'}), 500
 
 
 def receive():
-    url = current_app.config['RABBIT_MQ_URI']
-    connection = pika.BlockingConnection(pika.ConnectionParameters(url))
+    connection = _connection()
     channel = connection.channel()
-    channel.queue_declare(queue='operations', durable=True)
+    queue = current_app.config["RABBIT_MQ_QUEUE"]
+    channel.queue_declare(queue=queue, durable=True)
 
+    def callback(ch, method, properties, body):
+        operation = Operations(json.loads(body))
+        operation.calculate()
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+    channel.basic_consume(queue=queue, on_message_callback=callback, auto_ack=False)
     try:
-        def callback(ch, method, properties, body):
-            data = json.loads(body)
-            op = Operations(data)
-            op.calculate()
-
-        channel.basic_consume(queue='operations', on_message_callback=callback, auto_ack=True)
         channel.start_consuming()
-    except:
-        return jsonify({'Message': 'Error while consuming queue'}), 500
+    finally:
+        connection.close()
+    return jsonify({"message": "Consumer stopped"}), 200
